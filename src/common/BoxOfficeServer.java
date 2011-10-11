@@ -29,8 +29,8 @@ public class BoxOfficeServer extends UnicastRemoteObject implements IBoxOffice {
 	private String city = null;
 	
 	// Data members needed to implement the IBoxOffice interface
-	private Map<String, Integer> availableTickets = new HashMap<String, Integer>(); // <showId, title>
-	private Map<String, String>  availableShows   = new HashMap<String, String>();  // <showId, title>
+	private volatile Map<String, Integer> availableTickets = new HashMap<String, Integer>(); // <showId, #tickets>
+	private volatile Map<String, String>  availableShows   = new HashMap<String, String>();  // <showId, title>
 	private ArrayList<File>      salesFiles       = new ArrayList<File>();
 	
 	private Registry registry = LocateRegistry.getRegistry(REPOSITORY_HOST, REPOSITORY_PORT);
@@ -77,7 +77,7 @@ public class BoxOfficeServer extends UnicastRemoteObject implements IBoxOffice {
 		return f;
 	}
 	
-	private void recordSale(int customerID, String showID, int qtyTickets) {
+	private synchronized void recordSale(int customerID, String showID, int qtyTickets) {
 		try {
 			File f = salesFiles.get(salesFiles.indexOf(showID));
 			BufferedWriter out = new BufferedWriter(new FileWriter(f));
@@ -89,7 +89,7 @@ public class BoxOfficeServer extends UnicastRemoteObject implements IBoxOffice {
 		}
 	}
 	
-	private void cancelSale(int customerID, String showID, int qtyTickets) {
+	private synchronized void cancelSale(int customerID, String showID, int qtyTickets) {
 		try {
 			File temp = new File(PATH,"tmp");
 			File f = salesFiles.get(salesFiles.indexOf(showID));

@@ -19,6 +19,7 @@ public class ACustomerClient {
 		 for(String s : rmiObjects) {
 			 System.out.println(s);
 			 IBoxOffice box = (IBoxOffice)registry.lookup(s);
+			 // do something with the box office now...
 			 
 		 }
 	 }
