@@ -1,129 +1,98 @@
 package common;
 
-import java.io.BufferedReader;
-import java.io.BufferedWriter;
-import java.io.File;
-import java.io.FileReader;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.rmi.AlreadyBoundException;
-import java.rmi.NotBoundException;
 import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
 import java.rmi.server.UnicastRemoteObject;
+
 import java.util.ArrayList;
 import java.util.Map;
 import java.util.HashMap;
+
+import domain.Event;
 
 public class BoxOfficeServer extends UnicastRemoteObject implements IBoxOffice {
 
 	private static final long serialVersionUID = 1L;
 	
-	private static final String PATH = "/home/ben/workspace/soen423.a1/src/server/sales";
-	
 	// Data needed to connect to the RMI repository
 	private static final String REPOSITORY_HOST   = "localhost";
 	private static final int    REPOSITORY_PORT   = 1099;
-
-	private String city = null;
-	
-	// Data members needed to implement the IBoxOffice interface
-	private volatile Map<String, Integer> availableTickets = new HashMap<String, Integer>(); // <showId, #tickets>
-	private volatile Map<String, String>  availableShows   = new HashMap<String, String>();  // <showId, title>
-	private ArrayList<File>      salesFiles       = new ArrayList<File>();
-	
 	private Registry registry = LocateRegistry.getRegistry(REPOSITORY_HOST, REPOSITORY_PORT);
 	
-	public BoxOfficeServer(String city) throws NotBoundException, AlreadyBoundException, IOException {
+	// Data members needed to implement the IBoxOffice interface
+	private volatile Map<String, Event>  available_shows = new HashMap<String, Event>();  // <show_id, Event>
+	private String city = null;
+	
+	
+	public BoxOfficeServer(String city) throws Exception {
 		super();
 		this.city = city;
 		initialize();
+		registry.bind(this.city, this);
 	}
 	
-	private void initialize() throws AlreadyBoundException, IOException {
+	public synchronized void createEvent(String event_id, String title, int capacity) throws RemoteException {
+		if (available_shows.containsKey(event_id)) { throw new RemoteException("Duplicate event"); }
+		try {
+			Event e = new Event(event_id, title, capacity);
+			available_shows.put(event_id, e);
+			
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+	private void initialize() throws Exception {
 		for(int i = 100; i < 104; i++) {
-			String showID    = this.city+i;
-			String showTitle = "Show"+i;
+			String show_id    = this.city+i;
+			String show_title = "Show"+i;
 			
-			availableShows.put(showID, showTitle);
-			availableTickets.put(showID, 100);
-			salesFiles.add(createSalesFile(PATH, showID+".csv"));
-			registry.bind(showID, this);
+			createEvent(show_id, show_title, 100);
 		}
+		
 	}
 
 	@Override
-	public void reserve(int customerID, String showID, int qtyTickets) {
-		recordSale(customerID, showID, qtyTickets);
-	}
-
-	@Override
-	public void cancel(int customerID, String showID, int qtyTickets) throws RemoteException {
-		cancelSale(customerID, showID, qtyTickets);
-	}
-
-	@Override
-	public int show(String showID) throws RemoteException {
-		return availableTickets.get(showID);
-	}
-	
-	private File createSalesFile(String path, String name) throws IOException {
-		File f = new File(path, name);
-		if (!f.exists()) {
-			System.out.println(f.getParent());
-			f.createNewFile();
-		}
-		return f;
-	}
-	
-	private synchronized void recordSale(int customerID, String showID, int qtyTickets) {
-		try {
-			File f = salesFiles.get(salesFiles.indexOf(showID));
-			BufferedWriter out = new BufferedWriter(new FileWriter(f));
-			out.write(customerID+","+qtyTickets+"\n");
-			int total = availableTickets.get(showID);
-			availableTickets.put(showID, total-qtyTickets);
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
-	}
-	
-	private synchronized void cancelSale(int customerID, String showID, int qtyTickets) {
-		try {
-			File temp = new File(PATH,"tmp");
-			File f = salesFiles.get(salesFiles.indexOf(showID));
-			
-			BufferedReader in = new BufferedReader(new FileReader(f));
-			BufferedWriter out = new BufferedWriter(new FileWriter(temp));
-			
-			String line;
-			while ((line = in.readLine()) != null){
-				String[] s = line.split(",");
-				if(s[0].equals("customerID")) {
-					int balance = Integer.parseInt(s[1])-qtyTickets;
-					int total = availableTickets.get(showID);
-					if(balance > 0) {
-						out.write(s[0]+","+balance+"\n");
-						availableTickets.put(showID, total+qtyTickets);
-					}
-					else {
-						availableTickets.put(showID, total+qtyTickets);
-					}
-				}
-				else {
-					out.write(s[0]+","+s[1]+"\n");
-				}
+	public void reserve(int customer_id, String show_id, int qty) throws RemoteException {
+		if(available_shows.containsKey(show_id)) {
+			try {
+				available_shows.get(show_id).reserve(customer_id, qty);
+				System.out.println(customer_id+" reserved "+qty+" ticket(s) for "+show_id);
+				System.out.println("Number of available tickets left: "+show(show_id));
+			} catch (Exception e) {
+				e.printStackTrace();
 			}
-			
-			in.close();
-			out.close();
-			f.delete();
-			temp.renameTo(f);
-			
-		} catch (IOException e) {
-			e.printStackTrace();
 		}
+	}
+
+	@Override
+	public void cancel(int customer_id, String show_id, int qty) throws RemoteException {
+		if(available_shows.containsKey(show_id)) {
+			try {
+				available_shows.get(show_id).cancelReservation(customer_id, qty);
+				System.out.println(customer_id+" cancelled "+qty+" ticket(s) for "+show_id);
+				System.out.println("Number of available tickets left: "+show(show_id));
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		}
+		
+	}
+
+	@Override
+	public int show(String show_id) throws RemoteException {
+		if(available_shows.containsKey(show_id)) {
+			return available_shows.get(show_id).availability();
+		}
+		return 0;
+	}
+	
+	public ArrayList<String> allEvents() {
+		ArrayList<String> all = new ArrayList<String>(available_shows.size());
+		for (Map.Entry<String, Event> event : available_shows.entrySet()) {
+			all.add(event.getKey());
+		}
+		return all;
 	}
 
 }

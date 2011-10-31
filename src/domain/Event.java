@@ -2,6 +2,7 @@ package domain;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 import technical.log.ReservationLog;
 
@@ -10,17 +11,23 @@ public class Event {
 	private String title = null;
 	private String id    = null;
 	private volatile int availability = 0;
-	private Map<String, Integer> reservations = new HashMap<String, Integer>(); // customer_id, quantity
+	private Map<Integer, Integer> reservations = new HashMap<Integer, Integer>(); // customer_id, quantity
 	
-	public Event(String title, String id, int capacity) throws Exception {
-		if (capacity < 1) { throw new Exception("Capacity must be greater than 1");}
+	private static Pattern EVENT_ID_PATTERN = java.util.regex.Pattern.compile("^[A-Z]{3}\\d{3}$");
+	private static Pattern CUSTOMER_ID_PATTERN = java.util.regex.Pattern.compile("^\\d{6}$");
+	
+	public Event(String id, String title, int capacity) throws Exception {
+		if (!EVENT_ID_PATTERN.matcher(id).matches()) { throw new Exception("Event ID invalid. Please use the form ABC123."); }
+		if (title.isEmpty()) { throw new Exception("Every event must have a title"); }
+		if (capacity < 1) { throw new Exception("Capacity must be greater than 1"); }
+		
 		this.title = title;
 		this.id = id;
 		this.availability = capacity;
 	}
 	
-	public synchronized void reserve(String customer_id, int qty) throws Exception {
-		if (qty > 0 && qty <= this.availability) {
+	public synchronized void reserve(int customer_id, int qty) throws Exception {
+		if (qty > 0 && qty <= this.availability	&& verifyCustomer(customer_id)) {
 			if (reservations.containsKey(customer_id)) {
 				ReservationLog.update(this.id, customer_id, qty);
 			}
@@ -32,11 +39,11 @@ public class Event {
 			notifyAll();
 		}
 		else {
-			throw new Exception("Insufficient number of tickets for the request");
+			throw new Exception("Insufficient number of tickets for the request or incorrect customer ID");
 		}
 	}
 	
-	public synchronized void cancelReservation(String customer_id, int qty) throws Exception {
+	public synchronized void cancelReservation(int customer_id, int qty) throws Exception {
 		if (reservations.containsKey(customer_id)) {
 			int reserved_qty = reservations.get(customer_id);
 			if (qty > reserved_qty) {
@@ -68,5 +75,14 @@ public class Event {
 
 	public String getEventID() {
 		return this.id;
+	}
+	
+	private static boolean verifyCustomer(int customer_id) {
+		if (CUSTOMER_ID_PATTERN.matcher(Integer.toString(customer_id)).matches()) {
+			return true;
+		}
+		else {
+			return false;
+		}
 	}
 }
